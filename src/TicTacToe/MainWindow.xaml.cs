@@ -20,10 +20,24 @@ namespace TicTacToe
     /// </summary>
     public partial class MainWindow : Window
     {
+        private TicTacToeAI _ai = null!;
+        private Piece[,] _board = new Piece[3, 3];
+        private bool _gameEnded = false;
+
         public MainWindow()
         {
             InitializeComponent();
+            InitializeGame();
         }
+
+        private void InitializeGame()
+        {
+            // 初始化AI，默认困难难度
+            _ai = new TicTacToeAI(TicTacToeAI.Difficulty.Hard);
+            _gameEnded = false;
+            UpdateGameStatus("游戏开始！你是 X，AI 是 O");
+        }
+
         public Piece[,] Pieces = new Piece[3,3];
         private void ClearPieces()
         {
@@ -32,34 +46,157 @@ namespace TicTacToe
             {
                 btn.Piece = Piece.None;
             }
+            
+            // 清空内部棋盘状态
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    _board[i, j] = Piece.None;
+                }
+            }
+            
+            _gameEnded = false;
         }
         private List<GameButton> GetButtons()
         {
-            var child = BtnGird.Children.Cast<UIElement>().Where(x => x.GetType() == typeof(GameButton)).Select(x => x as GameButton).ToList();
-            return child;
+            var child = BtnGird.Children.Cast<UIElement>().Where(x => x.GetType() == typeof(GameButton)).Select(x => x as GameButton).Where(x => x != null).ToList();
+            return child!;
         }
         private void Button_Click(object sender, RoutedEventArgs e)
         {
-            if(e.Source is GameButton btn)
+            if (_gameEnded) return;
+
+            if (e.Source is GameButton btn && btn.Piece == Piece.None)
             {
-                //btn.Style = (Style)FindResource("CircleButton");
+                // 玩家下棋
                 btn.Piece = Piece.Times;
+                int tag = Convert.ToInt32(btn.Tag);
+                int row = tag / 3;
+                int col = tag % 3;
+                _board[row, col] = Piece.Times;
+
+                // 检查游戏是否结束
+                if (CheckGameEnd())
+                    return;
+
+                // AI下棋
+                MakeAIMove();
             }
-            var restBtns = GetButtons().Where(x => x.Piece == Piece.None).ToArray();
-            if(restBtns.Count() > 0)
+        }
+
+        private void MakeAIMove()
+        {
+            if (_gameEnded) return;
+
+            // 获取当前难度设置
+            var selectedItem = DifficultyComboBox.SelectedItem as ComboBoxItem;
+            var difficultyTag = selectedItem?.Tag?.ToString() ?? "Hard";
+            var difficulty = (TicTacToeAI.Difficulty)Enum.Parse(typeof(TicTacToeAI.Difficulty), difficultyTag);
+            
+            // 更新AI难度
+            _ai = new TicTacToeAI(difficulty);
+
+            // 获取AI的最佳移动
+            var (row, col) = _ai.GetBestMove(_board, Piece.Circle, Piece.Times);
+            
+            if (row >= 0 && col >= 0 && _board[row, col] == Piece.None)
             {
-                int index = new Random().Next(0, restBtns.Count());
-                restBtns[index].Piece = Piece.Circle;
+                // 找到对应的按钮并下棋
+                var buttons = GetButtons();
+                var aiButton = buttons.FirstOrDefault(b => 
+                {
+                    int tag = Convert.ToInt32(b.Tag);
+                    return tag / 3 == row && tag % 3 == col;
+                });
+
+                if (aiButton != null)
+                {
+                    aiButton.Piece = Piece.Circle;
+                    _board[row, col] = Piece.Circle;
+                }
             }
-            Piece winPiece = (Piece)Tic_Tac_Toe();
-            switch (winPiece)
+
+            // 检查游戏是否结束
+            CheckGameEnd();
+        }
+
+        private bool CheckGameEnd()
+        {
+            var winner = CheckWinner();
+            if (winner != Piece.None)
             {
-                case Piece.Times:MessageBtn.Text = "你赢了!";break;
-                case Piece.Circle:MessageBtn.Text = "你输了!";break;
+                _gameEnded = true;
+                switch (winner)
+                {
+                    case Piece.Times:
+                        MessageBtn.Text = "你赢了!";
+                        UpdateGameStatus("恭喜！你战胜了AI！");
+                        break;
+                    case Piece.Circle:
+                        MessageBtn.Text = "你输了!";
+                        UpdateGameStatus("AI获胜！再试一次吧！");
+                        break;
+                }
+                return true;
             }
-            if(restBtns.Count() == 0 && winPiece == Piece.None)
+
+            // 检查平局
+            if (IsBoardFull())
             {
+                _gameEnded = true;
                 MessageBtn.Text = "平局";
+                UpdateGameStatus("平局！势均力敌！");
+                return true;
+            }
+
+            return false;
+        }
+
+        private Piece CheckWinner()
+        {
+            // 检查行
+            for (int i = 0; i < 3; i++)
+            {
+                if (_board[i, 0] != Piece.None && _board[i, 0] == _board[i, 1] && _board[i, 1] == _board[i, 2])
+                    return _board[i, 0];
+            }
+
+            // 检查列
+            for (int j = 0; j < 3; j++)
+            {
+                if (_board[0, j] != Piece.None && _board[0, j] == _board[1, j] && _board[1, j] == _board[2, j])
+                    return _board[0, j];
+            }
+
+            // 检查对角线
+            if (_board[0, 0] != Piece.None && _board[0, 0] == _board[1, 1] && _board[1, 1] == _board[2, 2])
+                return _board[0, 0];
+
+            if (_board[0, 2] != Piece.None && _board[0, 2] == _board[1, 1] && _board[1, 1] == _board[2, 0])
+                return _board[0, 2];
+
+            return Piece.None;
+        }
+
+        private bool IsBoardFull()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    if (_board[i, j] == Piece.None)
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        private void UpdateGameStatus(string message)
+        {
+            if (GameStatusText != null)
+            {
+                GameStatusText.Text = message;
             }
         }
 
@@ -67,46 +204,7 @@ namespace TicTacToe
         {
             MessageBtn.Text = "";
             ClearPieces();
-        }
-        public void Async(Action action)
-        {
-
-        }
-        public int Tic_Tac_Toe()
-        {
-            var matrix = new int[3, 3];
-            foreach(var btn in GetButtons())
-            {
-                int tag = Convert.ToInt32(btn.Tag);
-                matrix[tag / 3, tag % 3] = (int)btn.Piece;
-            }
-            int result = 0;
-            for (int i = 0; i < 3; i++)
-            {
-                result = WinNumber(matrix[i, 0], matrix[i, 1], matrix[i, 2]);
-                if (result != 0) return result;
-            }
-            for (int j = 0; j < 3; j++)
-            {
-                result = WinNumber(matrix[0, j], matrix[1, j], matrix[2, j]);
-                if (result != 0) return result;
-            }
-            result = WinNumber(matrix[0, 0], matrix[1, 1], matrix[2, 2]);
-            if (result != 0) return result;
-            result = WinNumber(matrix[2, 0], matrix[1, 1], matrix[0, 2]);
-            if (result != 0) return result;
-            return result;
-        }
-        public static int WinNumber(int a, int b, int c)
-        {
-            if (a == b && b == c)
-            {
-                return a;
-            }
-            else
-            {
-                return 0;
-            }
+            UpdateGameStatus("游戏重置！选择难度开始新游戏");
         }
     }
 }
